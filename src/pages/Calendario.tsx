@@ -176,7 +176,7 @@ export function Calendario() {
         </div>
         <span />
       </div>
-      <div className="calendar-grid">
+      <div className={`calendar-grid ${accessLevel !== 'admin' ? 'calendar-grid--solo' : ''}`}>
         <div className="calendar-left">
           <FiltersBar
             status={statusFilter}
@@ -218,10 +218,12 @@ export function Calendario() {
           {viewMode === 'weekly' && <WeekView posts={fullyFiltered} onOpen={(id) => setSelectedId(id)} />}
           {viewMode === 'monthly' && <MonthView posts={fullyFiltered} onOpen={(id) => setSelectedId(id)} />}
         </div>
-        <div className="calendar-right">
-          <QuickCreatePost onCreated={handleCreated} />
-          <CsvUpload onCreatedMany={handleCreatedMany} />
-        </div>
+        {accessLevel === 'admin' && (
+          <div className="calendar-right">
+            <QuickCreatePost onCreated={handleCreated} />
+            <CsvUpload onCreatedMany={handleCreatedMany} />
+          </div>
+        )}
       </div>
       {selectedId && (
         <PostDrawer

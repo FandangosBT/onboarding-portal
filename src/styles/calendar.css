@@ -38,6 +38,10 @@
   margin-top: var(--space-sm);
 }
 
+.calendar-grid--solo {
+  grid-template-columns: 1fr;
+}
+
 .calendar-left,
 .calendar-right {
   display: flex;

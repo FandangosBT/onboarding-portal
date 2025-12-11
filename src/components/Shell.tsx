@@ -39,7 +39,9 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <aside className="shell-nav">
         <div className="shell-brand" onClick={() => navigate('/dashboard')}>
-          <div className="brand-mark">◆</div>
+          <div className="brand-mark">
+            <img src="/assets/TimeOS.png" alt="TimeOS" style={{ width: 28, height: 28, objectFit: 'contain' }} />
+          </div>
           <div>
             <div className="brand-title">TimeOS</div>
             <div className="brand-sub">Q7 OPS</div>
@@ -59,7 +61,6 @@ export function Shell({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <div className="shell-footer">
-          <span className="pill">ERP Premium</span>
           <span className="pill ghost">Modo teste</span>
         </div>
       </aside>

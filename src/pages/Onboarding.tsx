@@ -232,6 +232,8 @@ export function Onboarding() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [draftTemplate, setDraftTemplate] = useState<Template>(cloneTemplate(TEMPLATES[0]));
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [instanceId, setInstanceId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -256,14 +258,29 @@ export function Onboarding() {
         setLoading(false);
         return;
       }
-      const { data: tasksData } = await supabase
+      const { data: sessionData } = await supabase.auth.getSession();
+      const org =
+        (sessionData.session?.user?.app_metadata as any)?.organization_id ||
+        (sessionData.session?.user?.user_metadata as any)?.organization_id;
+      setOrgId(org ?? null);
+      if (!org) {
+        setFeedback('Usuário sem organization_id. Exibindo checklist global.');
+      }
+      let activeInstance: string | null = null;
+      if (org) {
+        const { data: instRow } = await supabase.from('onboarding_instances').select('id').eq('organization_id', org).maybeSingle();
+        activeInstance = instRow?.id ?? null;
+        setInstanceId(activeInstance);
+      }
+      const taskQuery = supabase
         .from('onboarding_tasks')
-        .select('id,title,description,status,due_date,step_id')
+        .select('id,title,description,status,due_date,step_id,organization_id')
         .order('due_date', { ascending: true });
-      const { data: stepsData } = await supabase
-        .from('onboarding_steps')
-        .select('id,title,position')
-        .order('position', { ascending: true });
+      const stepQuery = supabase.from('onboarding_steps').select('id,title,position,organization_id').order('position', { ascending: true });
+      const taskExec = org ? taskQuery.eq('organization_id', org) : taskQuery;
+      const stepExec = org ? stepQuery.eq('organization_id', org) : stepQuery;
+      const { data: tasksData } = activeInstance ? await taskExec.eq('instance_id', activeInstance) : await taskExec;
+      const { data: stepsData } = activeInstance ? await stepExec.eq('instance_id', activeInstance) : await stepExec;
       const hasData = (stepsData ?? []).length > 0 || (tasksData ?? []).length > 0;
       if (!hasData) {
         const template = TEMPLATES.find((t) => t.id === selectedTemplate) ?? TEMPLATES[0];
@@ -313,34 +330,75 @@ export function Onboarding() {
       return;
     }
 
-    // Garante template no banco e obtém o uuid
-    const { data: tplRow, error: tplError } = await supabase
-      .from('onboarding_templates')
-      .upsert({ name: template.name, is_active: true }, { onConflict: 'name' })
-      .select('id')
-      .single();
-    if (tplError || !tplRow?.id) {
+    // Obtém ou cria instância única da org
+    let currentInstance = instanceId;
+    if (!currentInstance) {
+      const { data: instRow } = await supabase.from('onboarding_instances').select('id').eq('organization_id', orgId).maybeSingle();
+      currentInstance = instRow?.id ?? null;
+    }
+    if (!currentInstance) {
+      const { data: created, error: instError } = await supabase.from('onboarding_instances').insert({ organization_id: orgId }).select('id').single();
+      if (instError || !created?.id) {
+        setPublishing(false);
+        setFeedback('Erro ao criar instância de onboarding.');
+        return;
+      }
+      currentInstance = created.id;
+      setInstanceId(created.id);
+    }
+
+    // Limpa tarefas/etapas anteriores da org nesta instância
+    await supabase.from('onboarding_tasks').delete().eq('instance_id', currentInstance).eq('organization_id', orgId);
+    await supabase.from('onboarding_steps').delete().eq('instance_id', currentInstance).eq('organization_id', orgId);
+
+    // Insere novas etapas e tarefas do template selecionado
+    const stepsPayload = template.steps.map((step, idx) => ({
+      title: step.title,
+      position: idx + 1,
+      organization_id: orgId,
+      instance_id: currentInstance,
+    }));
+    const { data: insertedSteps, error: stepsErr } = await supabase
+      .from('onboarding_steps')
+      .insert(stepsPayload)
+      .select('id,title,position')
+      .order('position', { ascending: true });
+    if (stepsErr || !insertedSteps) {
       setPublishing(false);
-      setFeedback('Erro ao registrar template no Supabase.');
+      setFeedback('Erro ao salvar etapas. Verifique RLS.');
       return;
     }
 
-    const { error: rpcError } = await supabase.rpc('publish_onboarding_template', {
-      p_org: orgId,
-      p_template: tplRow.id,
-      p_actor: user?.id,
+    const tasksPayload = template.steps.flatMap((step, idx) => {
+      const stepId = insertedSteps[idx]?.id;
+      return (step.tasks || []).map((task) => ({
+        instance_id: currentInstance,
+        step_id: stepId,
+        title: task.title,
+        description: task.description ?? null,
+        status: 'pending' as OnboardingTask['status'],
+        organization_id: orgId,
+      }));
     });
-    if (rpcError) {
+    const { error: tasksErr } = await supabase.from('onboarding_tasks').insert(tasksPayload);
+    if (tasksErr) {
       setPublishing(false);
-      setFeedback('Erro ao publicar template via RPC. Verifique permissões/RLS.');
+      setFeedback('Erro ao salvar tarefas. Verifique RLS.');
       return;
     }
 
     const { data: tasksData } = await supabase
       .from('onboarding_tasks')
       .select('id,title,description,status,due_date,step_id')
+      .eq('organization_id', orgId)
+      .eq('instance_id', currentInstance)
       .order('due_date', { ascending: true });
-    const { data: stepsData } = await supabase.from('onboarding_steps').select('id,title,position').order('position', { ascending: true });
+    const { data: stepsData } = await supabase
+      .from('onboarding_steps')
+      .select('id,title,position')
+      .eq('organization_id', orgId)
+      .eq('instance_id', currentInstance)
+      .order('position', { ascending: true });
 
     setTasks(tasksData ?? []);
     setSteps(stepsData ?? []);
@@ -382,6 +440,25 @@ export function Onboarding() {
         });
       }
     }
+  };
+
+  const deleteTask = async (taskId: string) => {
+    const ok = window.confirm('Excluir esta tarefa?');
+    if (!ok) return;
+    if (taskId.startsWith('local-') || !isSupabaseConfigured) {
+      const nextTasks = tasks.filter((t) => t.id !== taskId);
+      setTasks(nextTasks);
+      saveLocalState(steps, nextTasks);
+      return;
+    }
+    const { error } = await supabase.from('onboarding_tasks').delete().eq('id', taskId);
+    if (error) {
+      setFeedback('Erro ao excluir tarefa. Verifique permissões/RLS.');
+      return;
+    }
+    const nextTasks = tasks.filter((t) => t.id !== taskId);
+    setTasks(nextTasks);
+    saveLocalState(steps, nextTasks);
   };
 
   const updateTaskField = (taskId: string, field: keyof OnboardingTask, value: any) => {
@@ -581,7 +658,7 @@ export function Onboarding() {
                   </div>
                   {!isEditing && (
                     <div style={{ display: 'flex', gap: 8 }}>
-                      {task.status !== 'review' && (
+                      {isAdmin && task.status !== 'review' && (
                         <button
                           className="ds-button-primary"
                           style={{ padding: '6px 10px' }}
@@ -604,6 +681,13 @@ export function Onboarding() {
                     </div>
                   )}
                 </div>
+                {isEditing && isAdmin && (
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                    <button className="ds-button-primary" style={{ padding: '6px 10px' }} onClick={() => deleteTask(task.id)}>
+                      Excluir tarefa
+                    </button>
+                  </div>
+                )}
                 {!isEditing && (
                   <footer style={{ marginTop: 6, display: 'flex', gap: 12, alignItems: 'center' }}>
                     <StatusPill status={task.status} />

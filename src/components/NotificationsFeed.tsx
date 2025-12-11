@@ -8,6 +8,10 @@ type Notification = {
   body: string | null;
   origin: string | null;
   created_at: string;
+};
+
+type Receipt = {
+  notification_id: string;
   read_at: string | null;
 };
 
@@ -15,33 +19,41 @@ export function NotificationsFeed() {
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [receipts, setReceipts] = useState<Record<string, string | null>>({});
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       const role = (data.user?.app_metadata as any)?.role || (data.user?.user_metadata as any)?.role;
       setIsAdmin(role === 'internal_admin' || role === 'internal_staff');
+      setUserId(data.user?.id ?? null);
     });
 
-    supabase
-      .from('notifications')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (!error && data) setItems(data);
-        setLoading(false);
-      });
+    const fetchAll = async () => {
+      const [{ data: notifData }, { data: receiptsData }] = await Promise.all([
+        supabase.from('notifications').select('*').order('created_at', { ascending: false }),
+        supabase.from('notification_receipts').select('notification_id,read_at'),
+      ]);
+      if (notifData) setItems(notifData);
+      if (receiptsData) {
+        const map: Record<string, string | null> = {};
+        receiptsData.forEach((r) => {
+          map[r.notification_id] = r.read_at;
+        });
+        setReceipts(map);
+      }
+      setLoading(false);
+    };
+    fetchAll();
   }, []);
 
   const markAsRead = async (id: string) => {
-    const target = items.find((n) => n.id === id);
-    if (!target || target.read_at) return;
+    if (!userId) return;
+    const now = new Date().toISOString();
     const { error } = await supabase
-      .from('notifications')
-      .update({ read_at: new Date().toISOString() })
-      .eq('id', id);
-    if (!error) {
-      setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n)));
-    }
+      .from('notification_receipts')
+      .upsert({ notification_id: id, user_id: userId, read_at: now }, { onConflict: 'notification_id,user_id' });
+    if (!error) setReceipts((prev) => ({ ...prev, [id]: now }));
   };
 
   const deleteNotice = async (id: string) => {
@@ -53,13 +65,32 @@ export function NotificationsFeed() {
     }
   };
 
+  const markAllAsRead = async () => {
+    if (!userId || !items.length) return;
+    const now = new Date().toISOString();
+    const payload = items.map((n) => ({ notification_id: n.id, user_id: userId, read_at: now }));
+    const { error } = await supabase.from('notification_receipts').upsert(payload, { onConflict: 'notification_id,user_id' });
+    if (!error) {
+      const map: Record<string, string | null> = {};
+      items.forEach((n) => {
+        map[n.id] = now;
+      });
+      setReceipts(map);
+    }
+  };
+
   if (loading) return <div className="ds-card">Carregando notificações...</div>;
 
   return (
     <div className="ds-card" style={{ padding: '12px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <span style={{ color: 'var(--color-brand-gold)' }}>◆</span>
-        <h3 style={{ margin: 0 }}>Avisos</h3>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: 'var(--color-brand-gold)' }}>◆</span>
+          <h3 style={{ margin: 0 }}>Avisos</h3>
+        </div>
+        <button className="ds-button-primary" style={{ padding: '6px 12px' }} onClick={markAllAsRead} disabled={!items.length}>
+          Marcar todos como lido
+        </button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {items.length === 0 && <p style={{ margin: 0 }}>Nenhuma notificação.</p>}
@@ -69,8 +100,8 @@ export function NotificationsFeed() {
             className="ds-card"
             style={{
               padding: '12px',
-              background: n.read_at ? 'var(--color-surface)' : 'rgba(237,224,159,0.08)',
-              borderColor: n.read_at ? 'var(--color-border)' : 'var(--color-brand-gold-opacity)',
+              background: receipts[n.id] ? 'var(--color-surface)' : 'rgba(237,224,159,0.08)',
+              borderColor: receipts[n.id] ? 'var(--color-border)' : 'var(--color-brand-gold-opacity)',
             }}
           >
             <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -99,7 +130,7 @@ export function NotificationsFeed() {
                   {n.origin}
                 </span>
               )}
-              {!n.read_at && (
+              {!receipts[n.id] && (
                 <button className="ds-button-primary" style={{ padding: '6px 12px' }} onClick={() => markAsRead(n.id)}>
                   Marcar como lida
                 </button>

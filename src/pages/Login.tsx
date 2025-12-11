@@ -51,9 +51,12 @@ export function Login() {
   };
 
   return (
-    <div className="ds-card" style={{ maxWidth: 420, margin: '40px auto' }}>
-      <h2 style={{ marginBottom: 4 }}>Portal Q7 OPS</h2>
-      <p style={{ marginTop: 0, marginBottom: 12 }}>{mode === 'login' ? 'Entre para continuar' : mode === 'signup' ? 'Crie sua conta' : 'Recuperar senha'}</p>
+    <div className="ds-card" style={{ maxWidth: 420, margin: '40px auto', width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+        <img src="/assets/TimeOS.png" alt="TimeOS" style={{ width: 108, height: 108, objectFit: 'contain' }} />
+      </div>
+      <h2 style={{ marginBottom: 4 }}>Bem-vindo ao TimeOS Portal</h2>
+      <p style={{ marginTop: 0, marginBottom: 12 }}>Insira seu login e senha para entrar</p>
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <input
           className="ds-field"
@@ -90,24 +93,6 @@ export function Login() {
         </button>
       </form>
       {message && <p style={{ marginTop: 12, color: 'var(--color-brand-gold)' }}>{message}</p>}
-      <div style={{ display: 'flex', gap: 8, marginTop: 12, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-        <button className="ds-button-primary" style={{ padding: '6px 10px' }} onClick={() => setMode('login')}>
-          Login
-        </button>
-        <button className="ds-button-primary" style={{ padding: '6px 10px' }} onClick={() => setMode('signup')}>
-          Cadastro
-        </button>
-        <button className="ds-button-primary" style={{ padding: '6px 10px' }} onClick={() => setMode('reset')}>
-          Reset
-        </button>
-      </div>
-      <button
-        className="ds-button-primary"
-        style={{ marginTop: 12, width: '100%', background: '#222', borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
-        onClick={bypass}
-      >
-        Entrar sem autenticação (teste)
-      </button>
     </div>
   );
 }
