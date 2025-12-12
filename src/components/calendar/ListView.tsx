@@ -14,6 +14,7 @@ type Props = {
   onNextPage: () => void;
   fileMap: Record<string, File | null>;
   onOpen?: (id: string) => void;
+  accessLevel: 'admin' | 'usuario' | 'desconhecido';
 };
 
 function formatDateTime(value: string | null) {
@@ -23,7 +24,20 @@ function formatDateTime(value: string | null) {
 
 const weekdayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-export function ListView({ posts, onStatusChange, onArchive, onDelete, onUpload, onFile, pageSize, page, onNextPage, fileMap, onOpen }: Props) {
+export function ListView({
+  posts,
+  onStatusChange,
+  onArchive,
+  onDelete,
+  onUpload,
+  onFile,
+  pageSize,
+  page,
+  onNextPage,
+  fileMap,
+  onOpen,
+  accessLevel,
+}: Props) {
   const copy = (text: string | null | undefined) => {
     if (!text) return;
     navigator.clipboard?.writeText(text).catch(() => {
@@ -110,21 +124,27 @@ export function ListView({ posts, onStatusChange, onArchive, onDelete, onUpload,
               </button>
             )}
             {canTransition(post.status, 'published') && (
-              <button className="ds-button-primary" aria-label="Publicar post" onClick={(e) => { e.stopPropagation(); onStatusChange(post.id, 'published'); }}>
-                Publicar
-              </button>
+              accessLevel === 'admin' && (
+                <button className="ds-button-primary" aria-label="Publicar post" onClick={(e) => { e.stopPropagation(); onStatusChange(post.id, 'published'); }}>
+                  Publicar
+                </button>
+              )
             )}
             {canTransition(post.status, 'draft') && (
               <button className="ds-button-primary" aria-label="Reverter para rascunho" onClick={(e) => { e.stopPropagation(); onStatusChange(post.id, 'draft'); }}>
                 Reverter
               </button>
             )}
-            <button className="ds-button-primary" aria-label="Arquivar post" onClick={(e) => { e.stopPropagation(); onArchive(post.id); }}>
-              {post.archived_at ? 'Desarquivar' : 'Arquivar'}
-            </button>
-            <button className="ds-button-primary" aria-label="Excluir post" onClick={(e) => { e.stopPropagation(); onDelete(post.id); }}>
-              Excluir
-            </button>
+            {accessLevel === 'admin' && (
+              <>
+                <button className="ds-button-primary" aria-label="Arquivar post" onClick={(e) => { e.stopPropagation(); onArchive(post.id); }}>
+                  {post.archived_at ? 'Desarquivar' : 'Arquivar'}
+                </button>
+                <button className="ds-button-primary" aria-label="Excluir post" onClick={(e) => { e.stopPropagation(); onDelete(post.id); }}>
+                  Excluir
+                </button>
+              </>
+            )}
           </div>
 
           <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>

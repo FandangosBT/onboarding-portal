@@ -314,3 +314,49 @@
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 720px) {
+  .calendar-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: var(--space-md);
+  }
+
+  .calendar-grid {
+    gap: var(--space-sm);
+  }
+
+  .calendar-right {
+    position: static;
+  }
+
+  .calendar-filters {
+    grid-template-columns: 1fr;
+    padding: var(--space-md);
+    row-gap: var(--space-sm);
+  }
+
+  .calendar-filters .archive-toggle,
+  .calendar-filters .view-toggle {
+    grid-column: 1;
+    justify-self: stretch;
+  }
+
+  .calendar-filters .view-toggle {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .calendar-legend {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .calendar-card {
+    padding: var(--space-sm);
+  }
+
+  .calendar-week-column {
+    padding: var(--space-sm);
+  }
+}

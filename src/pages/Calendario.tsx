@@ -203,6 +203,7 @@ export function Calendario() {
           {viewMode === 'list' && (
             <ListView
               posts={fullyFiltered}
+              accessLevel={accessLevel}
               onStatusChange={updateStatus}
               onArchive={toggleArchive}
               onDelete={deletePost}

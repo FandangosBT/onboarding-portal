@@ -53,7 +53,7 @@ export function Login() {
   return (
     <div className="ds-card" style={{ maxWidth: 420, margin: '40px auto', width: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-        <img src="/assets/TimeOS.png" alt="TimeOS" style={{ width: 108, height: 108, objectFit: 'contain' }} />
+        <img src="/TimeOS.png" alt="TimeOS" style={{ width: 108, height: 108, objectFit: 'contain' }} />
       </div>
       <h2 style={{ marginBottom: 4 }}>Bem-vindo ao TimeOS Portal</h2>
       <p style={{ marginTop: 0, marginBottom: 12 }}>Insira seu login e senha para entrar</p>
