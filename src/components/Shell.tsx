@@ -85,10 +85,8 @@ export function Shell({ children }: { children: ReactNode }) {
               <NavLink key={item.path} to={item.path} className="shell-link">
                 {({ isActive }) => (
                   <span className={isActive ? 'shell-link-active' : 'shell-link-idle'} title={item.label}>
-                    <span className="link-icon" aria-hidden="true">
-                      {item.icon}
-                    </span>
-                    <span className="sr-only">{item.label}</span>
+                    <span className="link-dot" />
+                    <span className="link-label">{item.label}</span>
                   </span>
                 )}
               </NavLink>

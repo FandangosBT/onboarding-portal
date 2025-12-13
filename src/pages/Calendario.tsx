@@ -28,6 +28,7 @@ export function Calendario() {
   const pageSize = 10;
   const [accessLevel, setAccessLevel] = useState<'admin' | 'usuario' | 'desconhecido'>('desconhecido');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [uploadingMap, setUploadingMap] = useState<Record<string, 'idle' | 'uploading' | 'success' | 'error'>>({});
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -148,20 +149,39 @@ export function Calendario() {
   const uploadMedia = async (postId: string) => {
     const file = fileMap[postId];
     if (!file || !isSupabaseConfigured) return;
+    setUploadingMap((prev) => ({ ...prev, [postId]: 'uploading' }));
     const { data: sessionData } = await supabase.auth.getSession();
     const orgId =
       (sessionData.session?.user?.app_metadata as any)?.organization_id || (sessionData.session?.user?.user_metadata as any)?.organization_id;
+    const actor = sessionData.session?.user?.id || 'anon';
     const bucket = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'secure-docs';
     const folder = accessLevel === 'admin' ? 'edited' : 'raw';
-    const path = `org/${orgId ?? 'demo'}/${new Date().getFullYear()}/${new Date().getMonth() + 1}/calendar/${postId}/${folder}-${file.name}`;
+    const safeActor = actor.replace(/[^a-zA-Z0-9_-]/g, '');
+    const path = `org/${orgId ?? 'demo'}/${new Date().getFullYear()}/${new Date().getMonth() + 1}/calendar/${postId}/${folder}-${safeActor}-${file.name}`;
     const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
-    if (!uploadError) {
-      const payload =
-        accessLevel === 'admin'
-          ? { edited_video_path: path, status: 'approved' as Post['status'] }
-          : { raw_video_path: path, status: 'raw_uploaded' as Post['status'] };
-      await supabase.from('posts').update(payload).eq('id', postId);
-      setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, ...payload } : p)));
+    if (uploadError) {
+      setUploadingMap((prev) => ({ ...prev, [postId]: 'error' }));
+      return;
+    }
+    const payload =
+      accessLevel === 'admin'
+        ? { edited_video_path: path, status: 'approved' as Post['status'] }
+        : { raw_video_path: path, status: 'raw_uploaded' as Post['status'] };
+    const { error: updateError } = await supabase.from('posts').update(payload).eq('id', postId);
+    if (updateError) {
+      setUploadingMap((prev) => ({ ...prev, [postId]: 'error' }));
+      return;
+    }
+    setUploadingMap((prev) => ({ ...prev, [postId]: 'success' }));
+    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, ...payload } : p)));
+  };
+
+  const downloadMedia = async (path?: string | null) => {
+    if (!path || !isSupabaseConfigured) return;
+    const bucket = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'secure-docs';
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 30);
+    if (!error && data?.signedUrl) {
+      window.open(data.signedUrl, '_blank');
     }
   };
 
@@ -213,6 +233,8 @@ export function Calendario() {
               page={page}
               onNextPage={() => setPage((p) => p + 1)}
               fileMap={fileMap}
+              uploadingMap={uploadingMap}
+              onDownload={downloadMedia}
               onOpen={(id) => setSelectedId(id)}
             />
           )}

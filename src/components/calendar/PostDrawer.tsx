@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { useEffect, useMemo, useState } from 'react';
+import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
 import { Post } from '../../types';
 import { PostComment } from '../../types/comment';
 import { StatusPill } from './StatusPill';
@@ -22,6 +22,8 @@ export function PostDrawer({ post, onClose, onUpdated, accessLevel, onStatusChan
   const [loading, setLoading] = useState(false);
   const [comments, setComments] = useState<PostComment[]>([]);
   const [newComment, setNewComment] = useState('');
+  const [deleting, setDeleting] = useState<'none' | 'raw' | 'edited'>('none');
+  const [actorId, setActorId] = useState<string | null>(null);
 
   if (!post) return null;
 
@@ -42,6 +44,10 @@ export function PostDrawer({ post, onClose, onUpdated, accessLevel, onStatusChan
       .order('created_at', { ascending: false })
       .then(({ data }) => setComments(data ?? []));
   }, [post?.id]);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setActorId(data.user?.id ?? null));
+  }, []);
 
   const saveDetails = async () => {
     setLoading(true);
@@ -68,6 +74,37 @@ export function PostDrawer({ post, onClose, onUpdated, accessLevel, onStatusChan
       window.open(data.signedUrl, '_blank');
     }
   };
+
+  const canDeleteFile = (path?: string | null) => {
+    if (!path) return false;
+    if (accessLevel === 'admin') return true;
+    if (!actorId) return false;
+    return path.includes(actorId);
+  };
+
+  const deleteFile = async (kind: 'raw' | 'edited') => {
+    if (!isSupabaseConfigured) return;
+    const path = kind === 'raw' ? post.raw_video_path : post.edited_video_path;
+    if (!path) return;
+    if (!canDeleteFile(path)) return;
+    const bucket = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'secure-docs';
+    setDeleting(kind);
+    const { error: removeError } = await supabase.storage.from(bucket).remove([path]);
+    if (removeError) {
+      setDeleting('none');
+      return;
+    }
+    const payload =
+      kind === 'raw'
+        ? ({ raw_video_path: null } as Partial<Post> & { id: string })
+        : ({ edited_video_path: null } as Partial<Post> & { id: string });
+    const { error: updateError } = await supabase.from('posts').update(payload).eq('id', post.id);
+    setDeleting('none');
+    if (!updateError) onUpdated({ id: post.id, ...payload });
+  };
+
+  const rawFileName = useMemo(() => (post.raw_video_path ? post.raw_video_path.split('/').pop() || post.raw_video_path : null), [post.raw_video_path]);
+  const editedFileName = useMemo(() => (post.edited_video_path ? post.edited_video_path.split('/').pop() || post.edited_video_path : null), [post.edited_video_path]);
 
   const renderActions = () => (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -157,16 +194,52 @@ export function PostDrawer({ post, onClose, onUpdated, accessLevel, onStatusChan
             <UploadButton label="Enviar vídeo bruto" disabled={accessLevel !== 'usuario'} onUpload={() => onUpload(post.id)} />
             <UploadButton label="Enviar editado" disabled={accessLevel !== 'admin'} onUpload={() => onUpload(post.id)} />
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            {post.raw_video_path && (
-              <button className="ds-button-primary" style={{ padding: '6px 10px' }} onClick={() => downloadFile(post.raw_video_path)}>
-                Baixar bruto
-              </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+            {post.raw_video_path ? (
+              <div className="calendar-card" style={{ padding: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span className="calendar-tag" title={post.raw_video_path}>Bruto · {rawFileName}</span>
+                  <small style={{ color: 'var(--color-text-muted)' }}>Clique para baixar</small>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="ds-button-primary" style={{ padding: '6px 10px' }} onClick={() => downloadFile(post.raw_video_path)}>
+                    Baixar
+                  </button>
+                  <button
+                    className="ds-button-primary"
+                    style={{ padding: '6px 10px' }}
+                    onClick={() => deleteFile('raw')}
+                    disabled={!canDeleteFile(post.raw_video_path) || deleting === 'raw'}
+                  >
+                    {deleting === 'raw' ? 'Excluindo...' : 'Excluir'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <span style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)' }}>Nenhum bruto enviado.</span>
             )}
-            {post.edited_video_path && (
-              <button className="ds-button-primary" style={{ padding: '6px 10px' }} onClick={() => downloadFile(post.edited_video_path)}>
-                Baixar editado
-              </button>
+            {post.edited_video_path ? (
+              <div className="calendar-card" style={{ padding: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span className="calendar-tag" title={post.edited_video_path}>Editado · {editedFileName}</span>
+                  <small style={{ color: 'var(--color-text-muted)' }}>Clique para baixar</small>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="ds-button-primary" style={{ padding: '6px 10px' }} onClick={() => downloadFile(post.edited_video_path)}>
+                    Baixar
+                  </button>
+                  <button
+                    className="ds-button-primary"
+                    style={{ padding: '6px 10px' }}
+                    onClick={() => deleteFile('edited')}
+                    disabled={!canDeleteFile(post.edited_video_path) || deleting === 'edited'}
+                  >
+                    {deleting === 'edited' ? 'Excluindo...' : 'Excluir'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <span style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)' }}>Nenhum editado enviado.</span>
             )}
           </div>
         </div>

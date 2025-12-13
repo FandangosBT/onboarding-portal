@@ -2,6 +2,8 @@ import { canTransition } from '../../lib/calendar';
 import { Post } from '../../types';
 import { StatusPill } from './StatusPill';
 
+type UploadState = 'idle' | 'uploading' | 'success' | 'error';
+
 type Props = {
   posts: Post[];
   onStatusChange: (id: string, status: Post['status']) => void;
@@ -13,6 +15,8 @@ type Props = {
   page: number;
   onNextPage: () => void;
   fileMap: Record<string, File | null>;
+  uploadingMap: Record<string, UploadState>;
+  onDownload: (path: string) => void;
   onOpen?: (id: string) => void;
   accessLevel: 'admin' | 'usuario' | 'desconhecido';
 };
@@ -35,6 +39,8 @@ export function ListView({
   page,
   onNextPage,
   fileMap,
+  uploadingMap,
+  onDownload,
   onOpen,
   accessLevel,
 }: Props) {
@@ -152,11 +158,55 @@ export function ListView({
               <input type="file" aria-label="Upload de mídia" onChange={(e) => onFile(post.id, e.target.files?.[0] ?? null)} />
               Anexar vídeo
             </label>
-            <button className="ds-button-primary" onClick={(e) => { e.stopPropagation(); onUpload(post.id); }}>
-              Enviar mídia
+            <button
+              className="ds-button-primary"
+              onClick={(e) => { e.stopPropagation(); onUpload(post.id); }}
+              disabled={!fileMap[post.id] || uploadingMap[post.id] === 'uploading'}
+            >
+              {uploadingMap[post.id] === 'uploading' ? 'Enviando...' : 'Enviar mídia'}
             </button>
-            {post.media_path && (
-              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>Mídia: {post.media_path}</span>
+            {uploadingMap[post.id] === 'success' && (
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-status-success)' }}>Upload salvo</span>
+            )}
+            {uploadingMap[post.id] === 'error' && (
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-status-error)' }}>Falha no upload. Tente novamente.</span>
+            )}
+            {(fileMap[post.id] || post.raw_video_path || post.edited_video_path) && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
+                {fileMap[post.id] && (
+                  <span className="calendar-tag" title={fileMap[post.id]?.name}>
+                    Selecionado · {fileMap[post.id]?.name}
+                  </span>
+                )}
+                {post.raw_video_path && (
+                  <button
+                    className="calendar-tag"
+                    type="button"
+                    title={post.raw_video_path}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDownload(post.raw_video_path as string);
+                    }}
+                    style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: 0, color: 'inherit' }}
+                  >
+                    Bruto salvo · {post.raw_video_path.split('/').pop()}
+                  </button>
+                )}
+                {post.edited_video_path && (
+                  <button
+                    className="calendar-tag"
+                    type="button"
+                    title={post.edited_video_path}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDownload(post.edited_video_path as string);
+                    }}
+                    style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: 0, color: 'inherit' }}
+                  >
+                    Editado salvo · {post.edited_video_path.split('/').pop()}
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </article>
