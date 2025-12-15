@@ -30,14 +30,14 @@ export function TermGate({ children, fallback }: Props) {
         return;
       }
 
-      const { data: activeTerm } = await supabase
+      const { data: activeTerms } = await supabase
         .from('terms')
         .select('id')
         .eq('is_active', true)
         .order('version', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(1);
 
+      const activeTerm = activeTerms?.[0] ?? null;
       if (!activeTerm) {
         setStatus('allowed');
         return;

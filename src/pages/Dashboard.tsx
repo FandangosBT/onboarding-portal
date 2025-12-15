@@ -177,7 +177,7 @@ export function Dashboard() {
           <div className="dash-panel-header">
             <h4>Notificações</h4>
           </div>
-          <NotificationsFeed />
+          <NotificationsFeed mode="unread" />
         </div>
       </div>
     </div>
