@@ -2,7 +2,6 @@ import { createClient } from '@supabase/supabase-js';
 
 const envUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-const envServiceRole = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY as string | undefined;
 
 const supabaseUrl = envUrl || 'https://placeholder.supabase.co';
 const supabaseAnonKey = envKey || 'public-anon-key';
@@ -19,15 +18,5 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: true,
   },
+  global: { headers: { 'x-client-info': 'web-anon' } },
 });
-
-export const supabaseService =
-  envServiceRole && envUrl
-    ? createClient(supabaseUrl, envServiceRole, {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-          detectSessionInUrl: false,
-        },
-      })
-    : null;

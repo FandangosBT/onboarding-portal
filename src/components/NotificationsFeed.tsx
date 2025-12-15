@@ -23,6 +23,7 @@ export function NotificationsFeed() {
   const [receipts, setReceipts] = useState<Record<string, string | null>>({});
   const [userId, setUserId] = useState<string | null>(null);
   const [useReceiptsTable, setUseReceiptsTable] = useState(true);
+  const LOCAL_READ_KEY = 'notifications-read';
 
   const mapFromNotifications = (list: Notification[]) => {
     const map: Record<string, string | null> = {};
@@ -39,12 +40,29 @@ export function NotificationsFeed() {
       setUserId(data.user?.id ?? null);
     });
 
+    const readLocal = (uid: string | null) => {
+      if (!uid) return {};
+      try {
+        const raw = localStorage.getItem(LOCAL_READ_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw) as Record<string, Record<string, string | null>>;
+        return parsed[uid] || {};
+      } catch (e) {
+        console.warn('Erro ao ler cache local de notificações', e);
+        return {};
+      }
+    };
+
     const fetchAll = async () => {
       const { data: notifData } = await supabase.from('notifications').select('*').order('created_at', { ascending: false });
       if (notifData) setItems(notifData);
 
       if (!useReceiptsTable) {
-        if (notifData) setReceipts(mapFromNotifications(notifData));
+        if (notifData) {
+          const base = mapFromNotifications(notifData);
+          const merged = { ...base, ...readLocal(userId) };
+          setReceipts(merged);
+        }
         setLoading(false);
         return;
       }
@@ -52,34 +70,45 @@ export function NotificationsFeed() {
       const { data: receiptsData, error: receiptsError } = await supabase.from('notification_receipts').select('notification_id,read_at');
       if (receiptsError) {
         if (receiptsError.code === 'PGRST205') setUseReceiptsTable(false);
-        if (notifData) setReceipts(mapFromNotifications(notifData));
+        if (notifData) {
+          const base = mapFromNotifications(notifData);
+          const merged = { ...base, ...readLocal(userId) };
+          setReceipts(merged);
+        }
       } else if (receiptsData) {
         const map: Record<string, string | null> = {};
         receiptsData.forEach((r) => {
           map[r.notification_id] = r.read_at;
         });
-        setReceipts(map);
+        const merged = { ...map, ...readLocal(userId) };
+        setReceipts(merged);
       }
       setLoading(false);
     };
     fetchAll();
-  }, [useReceiptsTable]);
+  }, [useReceiptsTable, userId]);
 
   const markAsRead = async (id: string) => {
     const now = new Date().toISOString();
     setReceipts((prev) => ({ ...prev, [id]: now }));
     setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: now } : n)));
+    if (userId) {
+      try {
+        const raw = localStorage.getItem(LOCAL_READ_KEY);
+        const parsed = raw ? (JSON.parse(raw) as Record<string, Record<string, string | null>>) : {};
+        parsed[userId] = { ...(parsed[userId] || {}), [id]: now };
+        localStorage.setItem(LOCAL_READ_KEY, JSON.stringify(parsed));
+      } catch (e) {
+        console.warn('Erro ao salvar cache local de notificações', e);
+      }
+    }
 
     if (useReceiptsTable) {
       if (!userId) return;
       const { error } = await supabase
         .from('notification_receipts')
         .upsert({ notification_id: id, user_id: userId, read_at: now }, { onConflict: 'notification_id,user_id' });
-      if (error?.code === 'PGRST205') {
-        setUseReceiptsTable(false);
-      } else if (!error) {
-        return;
-      }
+      if (error?.code === 'PGRST205') setUseReceiptsTable(false);
     }
 
     await supabase.from('notifications').update({ read_at: now }).eq('id', id);
@@ -103,16 +132,22 @@ export function NotificationsFeed() {
     });
     setReceipts(map);
     setItems((prev) => prev.map((n) => ({ ...n, read_at: now })));
+    if (userId) {
+      try {
+        const raw = localStorage.getItem(LOCAL_READ_KEY);
+        const parsed = raw ? (JSON.parse(raw) as Record<string, Record<string, string | null>>) : {};
+        parsed[userId] = { ...(parsed[userId] || {}), ...map };
+        localStorage.setItem(LOCAL_READ_KEY, JSON.stringify(parsed));
+      } catch (e) {
+        console.warn('Erro ao salvar cache local de notificações', e);
+      }
+    }
 
     if (useReceiptsTable) {
       if (!userId) return;
       const payload = items.map((n) => ({ notification_id: n.id, user_id: userId, read_at: now }));
       const { error } = await supabase.from('notification_receipts').upsert(payload, { onConflict: 'notification_id,user_id' });
-      if (error?.code === 'PGRST205') {
-        setUseReceiptsTable(false);
-      } else if (!error) {
-        return;
-      }
+      if (error?.code === 'PGRST205') setUseReceiptsTable(false);
     }
 
     const ids = items.map((n) => n.id);
