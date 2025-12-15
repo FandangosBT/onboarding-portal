@@ -67,6 +67,8 @@ export function NotificationsFeed() {
 
   const markAsRead = async (id: string) => {
     const now = new Date().toISOString();
+    setReceipts((prev) => ({ ...prev, [id]: now }));
+    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: now } : n)));
 
     if (useReceiptsTable) {
       if (!userId) return;
@@ -76,13 +78,11 @@ export function NotificationsFeed() {
       if (error?.code === 'PGRST205') {
         setUseReceiptsTable(false);
       } else if (!error) {
-        setReceipts((prev) => ({ ...prev, [id]: now }));
         return;
       }
     }
 
-    const { error: fallbackError } = await supabase.from('notifications').update({ read_at: now }).eq('id', id);
-    if (!fallbackError) setReceipts((prev) => ({ ...prev, [id]: now }));
+    await supabase.from('notifications').update({ read_at: now }).eq('id', id);
   };
 
   const deleteNotice = async (id: string) => {
@@ -97,6 +97,12 @@ export function NotificationsFeed() {
   const markAllAsRead = async () => {
     if (!items.length) return;
     const now = new Date().toISOString();
+    const map: Record<string, string | null> = {};
+    items.forEach((n) => {
+      map[n.id] = now;
+    });
+    setReceipts(map);
+    setItems((prev) => prev.map((n) => ({ ...n, read_at: now })));
 
     if (useReceiptsTable) {
       if (!userId) return;
@@ -105,24 +111,12 @@ export function NotificationsFeed() {
       if (error?.code === 'PGRST205') {
         setUseReceiptsTable(false);
       } else if (!error) {
-        const map: Record<string, string | null> = {};
-        items.forEach((n) => {
-          map[n.id] = now;
-        });
-        setReceipts(map);
         return;
       }
     }
 
     const ids = items.map((n) => n.id);
-    const { error: fallbackError } = await supabase.from('notifications').update({ read_at: now }).in('id', ids);
-    if (!fallbackError) {
-      const map: Record<string, string | null> = {};
-      ids.forEach((nid) => {
-        map[nid] = now;
-      });
-      setReceipts(map);
-    }
+    await supabase.from('notifications').update({ read_at: now }).in('id', ids);
   };
 
   if (loading) return <div className="ds-card">Carregando notificações...</div>;
