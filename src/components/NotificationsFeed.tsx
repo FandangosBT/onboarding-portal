@@ -11,33 +11,29 @@ type Notification = {
   read_at?: string | null;
 };
 
-type Receipt = {
-  notification_id: string;
-  read_at: string | null;
-};
-
 export function NotificationsFeed() {
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [receipts, setReceipts] = useState<Record<string, string | null>>({});
+  const [receipts, setReceipts] = useState<Record<string, string>>({});
   const [userId, setUserId] = useState<string | null>(null);
   const [useReceiptsTable, setUseReceiptsTable] = useState(true);
   const LOCAL_READ_KEY = 'notifications-read';
 
   const mapFromNotifications = (list: Notification[]) => {
-    const map: Record<string, string | null> = {};
+    const map: Record<string, string> = {};
     list.forEach((n) => {
-      map[n.id] = n.read_at ?? null;
+      if (n.read_at) map[n.id] = n.read_at;
     });
     return map;
   };
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      const role = (data.user?.app_metadata as any)?.role || (data.user?.user_metadata as any)?.role;
+    supabase.auth.getSession().then(({ data }) => {
+      const user = data.session?.user ?? null;
+      const role = (user?.app_metadata as any)?.role || (user?.user_metadata as any)?.role;
       setIsAdmin(role === 'internal_admin' || role === 'internal_staff');
-      setUserId(data.user?.id ?? null);
+      setUserId(user?.id ?? null);
     });
 
     const readLocal = (uid: string | null) => {
@@ -46,7 +42,12 @@ export function NotificationsFeed() {
         const raw = localStorage.getItem(LOCAL_READ_KEY);
         if (!raw) return {};
         const parsed = JSON.parse(raw) as Record<string, Record<string, string | null>>;
-        return parsed[uid] || {};
+        const stored = parsed[uid] || {};
+        const cleaned: Record<string, string> = {};
+        Object.entries(stored).forEach(([key, value]) => {
+          if (value) cleaned[key] = value;
+        });
+        return cleaned;
       } catch (e) {
         console.warn('Erro ao ler cache local de notificações', e);
         return {};
@@ -76,9 +77,9 @@ export function NotificationsFeed() {
           setReceipts(merged);
         }
       } else if (receiptsData) {
-        const map: Record<string, string | null> = {};
+        const map: Record<string, string> = {};
         receiptsData.forEach((r) => {
-          map[r.notification_id] = r.read_at;
+          if (r.read_at) map[r.notification_id] = r.read_at;
         });
         const merged = { ...map, ...readLocal(userId) };
         setReceipts(merged);
@@ -88,15 +89,24 @@ export function NotificationsFeed() {
     fetchAll();
   }, [useReceiptsTable, userId]);
 
+  const getActiveUserId = async () => {
+    if (userId) return userId;
+    const { data } = await supabase.auth.getSession();
+    const uid = data.session?.user?.id ?? null;
+    if (uid) setUserId(uid);
+    return uid;
+  };
+
   const markAsRead = async (id: string) => {
     const now = new Date().toISOString();
     setReceipts((prev) => ({ ...prev, [id]: now }));
     setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: now } : n)));
-    if (userId) {
+    const uid = await getActiveUserId();
+    if (uid) {
       try {
         const raw = localStorage.getItem(LOCAL_READ_KEY);
         const parsed = raw ? (JSON.parse(raw) as Record<string, Record<string, string | null>>) : {};
-        parsed[userId] = { ...(parsed[userId] || {}), [id]: now };
+        parsed[uid] = { ...(parsed[uid] || {}), [id]: now };
         localStorage.setItem(LOCAL_READ_KEY, JSON.stringify(parsed));
       } catch (e) {
         console.warn('Erro ao salvar cache local de notificações', e);
@@ -104,11 +114,13 @@ export function NotificationsFeed() {
     }
 
     if (useReceiptsTable) {
-      if (!userId) return;
-      const { error } = await supabase
-        .from('notification_receipts')
-        .upsert({ notification_id: id, user_id: userId, read_at: now }, { onConflict: 'notification_id,user_id' });
+      const uidForReceipt = uid ?? userId;
+      if (uidForReceipt) {
+        const { error } = await supabase
+          .from('notification_receipts')
+          .upsert({ notification_id: id, user_id: uidForReceipt, read_at: now }, { onConflict: 'notification_id,user_id' });
       if (error?.code === 'PGRST205') setUseReceiptsTable(false);
+      }
     }
 
     await supabase.from('notifications').update({ read_at: now }).eq('id', id);
@@ -126,17 +138,18 @@ export function NotificationsFeed() {
   const markAllAsRead = async () => {
     if (!items.length) return;
     const now = new Date().toISOString();
-    const map: Record<string, string | null> = {};
+    const map: Record<string, string> = {};
     items.forEach((n) => {
       map[n.id] = now;
     });
     setReceipts(map);
     setItems((prev) => prev.map((n) => ({ ...n, read_at: now })));
-    if (userId) {
+    const uid = await getActiveUserId();
+    if (uid) {
       try {
         const raw = localStorage.getItem(LOCAL_READ_KEY);
         const parsed = raw ? (JSON.parse(raw) as Record<string, Record<string, string | null>>) : {};
-        parsed[userId] = { ...(parsed[userId] || {}), ...map };
+        parsed[uid] = { ...(parsed[uid] || {}), ...map };
         localStorage.setItem(LOCAL_READ_KEY, JSON.stringify(parsed));
       } catch (e) {
         console.warn('Erro ao salvar cache local de notificações', e);
@@ -144,10 +157,12 @@ export function NotificationsFeed() {
     }
 
     if (useReceiptsTable) {
-      if (!userId) return;
-      const payload = items.map((n) => ({ notification_id: n.id, user_id: userId, read_at: now }));
-      const { error } = await supabase.from('notification_receipts').upsert(payload, { onConflict: 'notification_id,user_id' });
-      if (error?.code === 'PGRST205') setUseReceiptsTable(false);
+      const uidForReceipt = uid ?? userId;
+      if (uidForReceipt) {
+        const payload = items.map((n) => ({ notification_id: n.id, user_id: uidForReceipt, read_at: now }));
+        const { error } = await supabase.from('notification_receipts').upsert(payload, { onConflict: 'notification_id,user_id' });
+        if (error?.code === 'PGRST205') setUseReceiptsTable(false);
+      }
     }
 
     const ids = items.map((n) => n.id);
