@@ -1,17 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-const supabase = supabaseUrl && serviceKey ? createClient(supabaseUrl, serviceKey) : null;
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-    if (!supabase || !supabaseUrl || !serviceKey)
-      return res.status(500).json({ error: 'Supabase service key not configured' });
+
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceKey) return res.status(500).json({ error: 'Supabase service key not configured' });
+
+    const supabase = createClient(supabaseUrl, serviceKey);
 
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
