@@ -8,6 +8,7 @@ type Notification = {
   body: string | null;
   origin: string | null;
   created_at: string;
+  read_at?: string | null;
 };
 
 type Receipt = {
@@ -21,6 +22,15 @@ export function NotificationsFeed() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [receipts, setReceipts] = useState<Record<string, string | null>>({});
   const [userId, setUserId] = useState<string | null>(null);
+  const [useReceiptsTable, setUseReceiptsTable] = useState(true);
+
+  const mapFromNotifications = (list: Notification[]) => {
+    const map: Record<string, string | null> = {};
+    list.forEach((n) => {
+      map[n.id] = n.read_at ?? null;
+    });
+    return map;
+  };
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -30,12 +40,20 @@ export function NotificationsFeed() {
     });
 
     const fetchAll = async () => {
-      const [{ data: notifData }, { data: receiptsData }] = await Promise.all([
-        supabase.from('notifications').select('*').order('created_at', { ascending: false }),
-        supabase.from('notification_receipts').select('notification_id,read_at'),
-      ]);
+      const { data: notifData } = await supabase.from('notifications').select('*').order('created_at', { ascending: false });
       if (notifData) setItems(notifData);
-      if (receiptsData) {
+
+      if (!useReceiptsTable) {
+        if (notifData) setReceipts(mapFromNotifications(notifData));
+        setLoading(false);
+        return;
+      }
+
+      const { data: receiptsData, error: receiptsError } = await supabase.from('notification_receipts').select('notification_id,read_at');
+      if (receiptsError) {
+        if (receiptsError.code === 'PGRST205') setUseReceiptsTable(false);
+        if (notifData) setReceipts(mapFromNotifications(notifData));
+      } else if (receiptsData) {
         const map: Record<string, string | null> = {};
         receiptsData.forEach((r) => {
           map[r.notification_id] = r.read_at;
@@ -45,15 +63,26 @@ export function NotificationsFeed() {
       setLoading(false);
     };
     fetchAll();
-  }, []);
+  }, [useReceiptsTable]);
 
   const markAsRead = async (id: string) => {
-    if (!userId) return;
     const now = new Date().toISOString();
-    const { error } = await supabase
-      .from('notification_receipts')
-      .upsert({ notification_id: id, user_id: userId, read_at: now }, { onConflict: 'notification_id,user_id' });
-    if (!error) setReceipts((prev) => ({ ...prev, [id]: now }));
+
+    if (useReceiptsTable) {
+      if (!userId) return;
+      const { error } = await supabase
+        .from('notification_receipts')
+        .upsert({ notification_id: id, user_id: userId, read_at: now }, { onConflict: 'notification_id,user_id' });
+      if (error?.code === 'PGRST205') {
+        setUseReceiptsTable(false);
+      } else if (!error) {
+        setReceipts((prev) => ({ ...prev, [id]: now }));
+        return;
+      }
+    }
+
+    const { error: fallbackError } = await supabase.from('notifications').update({ read_at: now }).eq('id', id);
+    if (!fallbackError) setReceipts((prev) => ({ ...prev, [id]: now }));
   };
 
   const deleteNotice = async (id: string) => {
@@ -66,14 +95,31 @@ export function NotificationsFeed() {
   };
 
   const markAllAsRead = async () => {
-    if (!userId || !items.length) return;
+    if (!items.length) return;
     const now = new Date().toISOString();
-    const payload = items.map((n) => ({ notification_id: n.id, user_id: userId, read_at: now }));
-    const { error } = await supabase.from('notification_receipts').upsert(payload, { onConflict: 'notification_id,user_id' });
-    if (!error) {
+
+    if (useReceiptsTable) {
+      if (!userId) return;
+      const payload = items.map((n) => ({ notification_id: n.id, user_id: userId, read_at: now }));
+      const { error } = await supabase.from('notification_receipts').upsert(payload, { onConflict: 'notification_id,user_id' });
+      if (error?.code === 'PGRST205') {
+        setUseReceiptsTable(false);
+      } else if (!error) {
+        const map: Record<string, string | null> = {};
+        items.forEach((n) => {
+          map[n.id] = now;
+        });
+        setReceipts(map);
+        return;
+      }
+    }
+
+    const ids = items.map((n) => n.id);
+    const { error: fallbackError } = await supabase.from('notifications').update({ read_at: now }).in('id', ids);
+    if (!fallbackError) {
       const map: Record<string, string | null> = {};
-      items.forEach((n) => {
-        map[n.id] = now;
+      ids.forEach((nid) => {
+        map[nid] = now;
       });
       setReceipts(map);
     }

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const envUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const envServiceRole = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY as string | undefined;
 
 const supabaseUrl = envUrl || 'https://placeholder.supabase.co';
 const supabaseAnonKey = envKey || 'public-anon-key';
@@ -19,3 +20,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
   },
 });
+
+export const supabaseService =
+  envServiceRole && envUrl
+    ? createClient(supabaseUrl, envServiceRole, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+          detectSessionInUrl: false,
+        },
+      })
+    : null;

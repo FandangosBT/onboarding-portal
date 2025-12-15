@@ -10,6 +10,7 @@ import { getAccessLevel } from '../lib/permissions';
 import { PostDrawer } from '../components/calendar/PostDrawer';
 import { QuickCreatePost } from '../components/calendar/QuickCreatePost';
 import { CsvUpload } from '../components/calendar/CsvUpload';
+import { getSignedDownloadUrl } from '../lib/storage';
 import '../styles/calendar.css';
 
 type ViewMode = 'list' | 'weekly' | 'monthly';
@@ -178,10 +179,9 @@ export function Calendario() {
 
   const downloadMedia = async (path?: string | null) => {
     if (!path || !isSupabaseConfigured) return;
-    const bucket = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'secure-docs';
-    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 30);
-    if (!error && data?.signedUrl) {
-      window.open(data.signedUrl, '_blank');
+    const signedUrl = await getSignedDownloadUrl(path);
+    if (signedUrl) {
+      window.open(signedUrl, '_blank');
     }
   };
 

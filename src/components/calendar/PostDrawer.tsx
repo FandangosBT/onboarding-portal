@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
+import { getSignedDownloadUrl } from '../../lib/storage';
 import { Post } from '../../types';
 import { PostComment } from '../../types/comment';
 import { StatusPill } from './StatusPill';
@@ -67,11 +68,10 @@ export function PostDrawer({ post, onClose, onUpdated, accessLevel, onStatusChan
   };
 
   const downloadFile = async (path?: string | null) => {
-    if (!path) return;
-    const bucket = import.meta.env.VITE_SUPABASE_PRIVATE_BUCKET || 'secure-docs';
-    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 30);
-    if (!error && data?.signedUrl) {
-      window.open(data.signedUrl, '_blank');
+    if (!isSupabaseConfigured || !path) return;
+    const signedUrl = await getSignedDownloadUrl(path);
+    if (signedUrl) {
+      window.open(signedUrl, '_blank');
     }
   };
 
