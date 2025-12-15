@@ -7,7 +7,8 @@ const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = supabaseUrl && serviceKey ? createClient(supabaseUrl, serviceKey) : null;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
   if (!supabase) return res.status(500).json({ error: 'Supabase service key not configured' });
 
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -16,7 +17,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
   if (userError || !userData?.user) return res.status(401).json({ error: 'Invalid token' });
 
-  const { path, expiresIn = 1800 } = req.body as { path?: string; expiresIn?: number };
+  const payload = (req.method === 'GET' ? req.query : req.body) as { path?: string; expiresIn?: number };
+  const { path, expiresIn = 1800 } = payload;
   if (!path) return res.status(400).json({ error: 'Path is required' });
 
   const orgId =

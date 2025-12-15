@@ -18,6 +18,15 @@ export async function getSignedDownloadUrl(path: string, expiresInSeconds: numbe
         const json = await resp.json();
         if (json?.signedUrl) return json.signedUrl as string;
       }
+      // fallback GET in case some platform blocks POST to /api
+      const respGet = await fetch(`${signProxy}?path=${encodeURIComponent(path)}&expiresIn=${expiresInSeconds}`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (respGet.ok) {
+        const json = await respGet.json();
+        if (json?.signedUrl) return json.signedUrl as string;
+      }
     }
   } catch (err) {
     console.warn('Proxy de assinatura indisponível', err);
